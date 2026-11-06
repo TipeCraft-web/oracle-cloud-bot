@@ -29,17 +29,24 @@ jobs:
         echo "tenancy=${{ secrets.OCI_TENANCY_OCID }}" >> ~/.oci/config
         echo "region=${{ secrets.OCI_REGION }}" >> ~/.oci/config
         echo "key_file=~/.oci/oci_api_key.pem" >> ~/.oci/config
-        echo "${{ secrets.OCI_KEY_CONTENT }}" > ~/.oci/api_key.pem
-        chmod 600 ~/.oci/api_key.pem
+        echo "${{ secrets.OCI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
+        chmod 600 ~/.oci/oci_api_key.pem
 
     - name: Try to Create Ampere Instance
       run: |
+        # Schreibt das JSON zeilenweise ohne störende Anführungszeichen in eine Datei
+        cat << 'EOF' > shape_config.json
+        {
+          "ocpus": 2,
+          "memoryInGBs": 12
+        }
+        EOF
+
         oci compute instance launch \
           --availability-domain "UocM:EU-ZURICH-1-AD-1" \
           --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
           --shape "VM.Standard.A1.Flex" \
-          --ocpus 2 \
-          --memory-in-gbs 12 \
+          --shape-config file://shape_config.json \
           --image-id "ocid1.image.oc1.eu-zurich-1.aaaaaaaaekg26xbyq2unwclv466g76p5eul2u233t63ofbeon5yq6j6v6fqa" \
           --subnet-id "ocid1.subnet.oc1.eu-zurich-1.aaaaaaaamnhdcfeo4qlf5kzsy5tjkeze77etmbr6lcyky3v5rfuapdjxb5qa" \
           --assign-public-ip true
