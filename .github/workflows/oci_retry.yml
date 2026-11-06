@@ -43,7 +43,7 @@ jobs:
           echo "Distanzierter Versuch Nummer $i von 3..."
           echo "========================================="
           
-          # API-Anfrage abschicken
+          # API-Anfrage abschicken (|| true verhindert den harten Abbruch bei Fehlern)
           OUTPUT=$(oci compute instance launch \
             --availability-domain "UocM:EU-ZURICH-1-AD-1" \
             --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
@@ -51,23 +51,30 @@ jobs:
             --shape-config file://shape_config.json \
             --image-id "ocid1.image.oc1.eu-zurich-1.aaaaaaaaekg26xbyq2unwclv466g76p5eul2u233t63ofbeon5yq6j6v6fqa" \
             --subnet-id "ocid1.subnet.oc1.eu-zurich-1.aaaaaaaamnhdcfeo4qlf5kzsy5tjkeze77etmbr6lcyky3v5rfuapdjxb5qa" \
-            --assign-public-ip true 2>&1)
+            --assign-public-ip true 2>&1) || true
           
           echo "$OUTPUT"
           
           # Wenn in der Antwort das Wort 'instance' oder 'lifecycle-state' vorkommt, war es erfolgreich!
           if [[ "$OUTPUT" == *"instance"* || "$OUTPUT" == *"lifecycle-state"* ]]; then
-            echo "!!! ERFOLG !!! Die Ampere-Instanz wurde erfolgreich erstellt!"
+            echo "========================================="
+            echo "[BOT] !!! ERFOLG !!! Die Ampere-Instanz wurde erfolgreich erstellt!"
+            echo "========================================="
             exit 0
           fi
           
+          # Nachricht für den Fehlschlag nach diesem Versuch
+          echo "[BOT] Versuch $i fehlgeschlagen (keine Kapazität)."
+          
           # Warte exakt 240 Sekunden (4 Minuten) bis zum nächsten Versuch
           if [ $i -lt 3 ]; then
-            echo "Warte 240 Sekunden (4 Minuten)..."
+            echo "[BOT] Ich schlafe jetzt für 240 Sekunden (4 Minuten)..."
             sleep 240
           fi
         done
         
-        # Wenn nach 3 Versuchen nichts frei war, mit Fehler beenden, damit GitHub den nächsten Wecker stellt
-        echo "In diesem Durchlauf war leider keine Kapazität frei."
+        # Nachricht für den Fehlschlag am Ende des gesamten 15-Minuten-Durchlaufs
+        echo "========================================="
+        echo "[BOT] Dieser Durchlauf war erfolglos. Ich warte auf den nächsten Wecker in 15 Minuten..."
+        echo "========================================="
         exit 1
