@@ -1,0 +1,41 @@
+name: OCI Instance Grabber (Zurich)
+
+on:
+  schedule:
+    # Läuft alle 15 Minuten (Standard-Minimum bei GitHub Free)
+    - cron: '*/15 * * * *'
+  workflow_dispatch: # Erlaubt dir, den Versuch jederzeit manuell am iPad zu starten
+
+jobs:
+  run-oci-cli:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install OCI CLI
+      run: |
+        curl -L -O https://githubusercontent.com
+        chmod +x install.sh
+        ./install.sh --accept-all-defaults
+        echo "/home/runner/bin" >> $GITHUB_PATH
+
+    - name: Setup OCI Config
+      run: |
+        mkdir -p ~/.oci
+        echo "[DEFAULT]" > ~/.oci/config
+        echo "user=${{ secrets.OCI_USER_OCID }}" >> ~/.oci/config
+        echo "fingerprint=${{ secrets.OCI_FINGERPRINT }}" >> ~/.oci/config
+        echo "tenancy=${{ secrets.OCI_TENANCY_OCID }}" >> ~/.oci/config
+        echo "region=${{ secrets.OCI_REGION }}" >> ~/.oci/config
+        echo "key_file=~/.oci/oci_api_key.pem" >> ~/.oci/config
+        echo "${{ secrets.OCI_KEY_CONTENT }}" > ~/.oci/config.oci_api_key.pem
+        chmod 600 ~/.oci/config.oci_api_key.pem
+
+    - name: Try to Create Ampere Instance
+      run: |
+        oci compute instance launch \
+          --availability-domain "UocM:EU-ZURICH-1-AD-1" \
+          --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
+          --shape "VM.Standard.A1.Flex" \
+          --shape-config '{"shapeConfig":{"ocpus":2,"memoryInGBs":12}}' \
+          --image-id "ocid1.image.oc1.eu-zurich-1.aaaaaaaand5tgybveffubg2sh6y6n6v6f6fvxvlkny3gchof6a7g73g3lyba" \
+          --subnet-id "ocid1.subnet.oc1.eu-zurich-1.aaaaaaaamnhdcfeo4qlf5kzsy5tjkeze77etmbr6lcyky3v5rfuapdjxb5qa" \
+          --assign-public-ip true
