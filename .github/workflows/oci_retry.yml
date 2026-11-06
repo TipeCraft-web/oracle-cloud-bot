@@ -30,8 +30,8 @@ jobs:
 
     - name: Try to Create Ampere Instance
       run: |
-        # Die JSON-Struktur muss zwingend das übergeordnete 'shapeConfig'-Objekt enthalten
-        echo '{"shapeConfig": {"ocpus": 2, "memoryInGBs": 12}}' > shape_config.json
+        # Flaches JSON-Format für die CLI-Parameterübergabe
+        echo '{"ocpus": 2, "memoryInGBs": 12}' > shape_config.json
 
         oci compute instance launch \
           --availability-domain "UocM:EU-ZURICH-1-AD-1" \
