@@ -25,8 +25,8 @@ jobs:
         echo "tenancy=${{ secrets.OCI_TENANCY_OCID }}" >> ~/.oci/config
         echo "region=${{ secrets.OCI_REGION }}" >> ~/.oci/config
         echo "key_file=~/.oci/oci_api_key.pem" >> ~/.oci/config
-        echo "${{ secrets.OCI_KEY_CONTENT }}" > ~/.oci/api_key.pem
-        chmod 600 ~/.oci/api_key.pem
+        echo "${{ secrets.OCI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
+        chmod 600 ~/.oci/oci_api_key.pem
 
     - name: Try to Create Ampere Instance
       run: |
