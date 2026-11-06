@@ -1,52 +1,34 @@
-name: OCI Instance Grabber (Zurich)
-
-on:
-  schedule:
-    # Läuft alle 15 Minuten (Standard-Minimum bei GitHub Free)
-    - cron: '*/15 * * * *'
-  workflow_dispatch: # Erlaubt dir, den Versuch jederzeit manuell am iPad zu starten
-
-env:
-  SUPPRESS_LABEL_WARNING: "True"
-  OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
-
-jobs:
-  run-oci-cli:
-    runs-on: ubuntu-latest
-    steps:
-    - name: Install OCI CLI in User Space
+    - name: Try to Create Ampere Instance in a Loop
       run: |
-        pip install --user oci-cli
-        echo "/home/runner/.local/bin" >> $GITHUB_PATH
-
-    - name: Setup OCI Config
-      run: |
-        rm -rf ~/.oci
-        mkdir -p ~/.oci
-        echo "[DEFAULT]" > ~/.oci/config
-        echo "user=${{ secrets.OCI_USER_OCID }}" >> ~/.oci/config
-        echo "fingerprint=${{ secrets.OCI_FINGERPRINT }}" >> ~/.oci/config
-        echo "tenancy=${{ secrets.OCI_TENANCY_OCID }}" >> ~/.oci/config
-        echo "region=${{ secrets.OCI_REGION }}" >> ~/.oci/config
-        echo "key_file=~/.oci/oci_api_key.pem" >> ~/.oci/config
-        echo "${{ secrets.OCI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
-        chmod 600 ~/.oci/oci_api_key.pem
-
-    - name: Try to Create Ampere Instance
-      run: |
-        # Schreibt das JSON zeilenweise ohne störende Anführungszeichen in eine Datei
-        cat << 'EOF' > shape_config.json
-        {
-          "ocpus": 2,
-          "memoryInGBs": 12
-        }
-        EOF
-
-        oci compute instance launch \
-          --availability-domain "UocM:EU-ZURICH-1-AD-1" \
-          --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
-          --shape "VM.Standard.A1.Flex" \
-          --shape-config file://shape_config.json \
-          --image-id "ocid1.image.oc1.eu-zurich-1.aaaaaaaaekg26xbyq2unwclv466g76p5eul2u233t63ofbeon5yq6j6v6fqa" \
-          --subnet-id "ocid1.subnet.oc1.eu-zurich-1.aaaaaaaamnhdcfeo4qlf5kzsy5tjkeze77etmbr6lcyky3v5rfuapdjxb5qa" \
-          --assign-public-ip true
+        echo '{"ocpus": 2, "memoryInGBs": 12}' > shape_config.json
+        
+        # Startet eine Schleife, die 12-mal läuft (ca. 12-14 Minuten Gesamtlaufzeit)
+        for i in {1..12}
+        do
+          echo "Versuch Nummer $i..."
+          
+          # Befehl ausführen und die Fehlermeldung in einer Variable speichern
+          OUTPUT=$(oci compute instance launch \
+            --availability-domain "UocM:EU-ZURICH-1-AD-1" \
+            --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
+            --shape "VM.Standard.A1.Flex" \
+            --shape-config file://shape_config.json \
+            --image-id "ocid1.image.oc1.eu-zurich-1.aaaaaaaaekg26xbyq2unwclv466g76p5eul2u233t63ofbeon5yq6j6v6fqa" \
+            --subnet-id "ocid1.subnet.oc1.eu-zurich-1.aaaaaaaamnhdcfeo4qlf5kzsy5tjkeze77etmbr6lcyky3v5rfuapdjxb5qa" \
+            --assign-public-ip true 2>&1)
+          
+          echo "$OUTPUT"
+          
+          # Wenn die Instanz erfolgreich erstellt wurde, beende die Schleife vorzeitig
+          if [[ "$OUTPUT" == *"instance"* ]]; then
+            echo "Erfolg! Instanz wurde erstellt."
+            exit 0
+          fi
+          
+          # Warte 60 Sekunden bis zum nächsten Versuch innerhalb dieses Durchlaufs
+          echo "Warte 60 Sekunden..."
+          sleep 60
+        done
+        
+        # Wenn nach 12 Versuchen nichts frei war, brich mit Fehler ab (damit GitHub in 15 Min neu startet)
+        exit 1
