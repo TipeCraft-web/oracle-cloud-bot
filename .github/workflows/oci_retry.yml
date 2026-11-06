@@ -1,13 +1,49 @@
-    - name: Try to Create Ampere Instance in a Loop
+name: OCI Instance Grabber (Zurich)
+
+on:
+  schedule:
+    # Startet den Haupt-Wecker alle 15 Minuten
+    - cron: '*/15 * * * *'
+  workflow_dispatch: # Erlaubt den manuellen Start am iPad
+
+env:
+  SUPPRESS_LABEL_WARNING: "True"
+  OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
+
+jobs:
+  run-oci-cli:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install OCI CLI in User Space
+      run: |
+        pip install --user oci-cli
+        echo "/home/runner/.local/bin" >> $GITHUB_PATH
+
+    - name: Setup OCI Config
+      run: |
+        rm -rf ~/.oci
+        mkdir -p ~/.oci
+        echo "[DEFAULT]" > ~/.oci/config
+        echo "user=${{ secrets.OCI_USER_OCID }}" >> ~/.oci/config
+        echo "fingerprint=${{ secrets.OCI_FINGERPRINT }}" >> ~/.oci/config
+        echo "tenancy=${{ secrets.OCI_TENANCY_OCID }}" >> ~/.oci/config
+        echo "region=${{ secrets.OCI_REGION }}" >> ~/.oci/config
+        echo "key_file=~/.oci/oci_api_key.pem" >> ~/.oci/config
+        echo "${{ secrets.OCI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
+        chmod 600 ~/.oci/oci_api_key.pem
+
+    - name: Safe 240s Spammer Loop
       run: |
         echo '{"ocpus": 2, "memoryInGBs": 12}' > shape_config.json
         
-        # Startet eine Schleife, die 12-mal läuft (ca. 12-14 Minuten Gesamtlaufzeit)
-        for i in {1..12}
+        # Schleife läuft 3-mal (3 Versuche * 240 Sekunden = 12 Minuten Laufzeit)
+        for i in {1..3}
         do
-          echo "Versuch Nummer $i..."
+          echo "========================================="
+          echo "Distanzierter Versuch Nummer $i von 3..."
+          echo "========================================="
           
-          # Befehl ausführen und die Fehlermeldung in einer Variable speichern
+          # API-Anfrage abschicken
           OUTPUT=$(oci compute instance launch \
             --availability-domain "UocM:EU-ZURICH-1-AD-1" \
             --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
@@ -19,16 +55,19 @@
           
           echo "$OUTPUT"
           
-          # Wenn die Instanz erfolgreich erstellt wurde, beende die Schleife vorzeitig
-          if [[ "$OUTPUT" == *"instance"* ]]; then
-            echo "Erfolg! Instanz wurde erstellt."
+          # Wenn in der Antwort das Wort 'instance' oder 'lifecycle-state' vorkommt, war es erfolgreich!
+          if [[ "$OUTPUT" == *"instance"* || "$OUTPUT" == *"lifecycle-state"* ]]; then
+            echo "!!! ERFOLG !!! Die Ampere-Instanz wurde erfolgreich erstellt!"
             exit 0
           fi
           
-          # Warte 60 Sekunden bis zum nächsten Versuch innerhalb dieses Durchlaufs
-          echo "Warte 60 Sekunden..."
-          sleep 60
+          # Warte exakt 240 Sekunden (4 Minuten) bis zum nächsten Versuch
+          if [ $i -lt 3 ]; then
+            echo "Warte 240 Sekunden (4 Minuten)..."
+            sleep 240
+          fi
         done
         
-        # Wenn nach 12 Versuchen nichts frei war, brich mit Fehler ab (damit GitHub in 15 Min neu startet)
+        # Wenn nach 3 Versuchen nichts frei war, mit Fehler beenden, damit GitHub den nächsten Wecker stellt
+        echo "In diesem Durchlauf war leider keine Kapazität frei."
         exit 1
