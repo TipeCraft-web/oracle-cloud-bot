@@ -43,28 +43,30 @@ jobs:
           echo "Distanzierter Versuch Nummer $i von 3..."
           echo "========================================="
           
-          # API-Anfrage abschicken (|| true verhindert den harten Abbruch bei Fehlern)
-          OUTPUT=$(oci compute instance launch \
+          # Wir speichern die Antwort UND den echten HTTP-Statuscode ab
+          OUTPUT_FILE=$(mktemp)
+          HTTP_STATUS=$(oci compute instance launch \
             --availability-domain "UocM:EU-ZURICH-1-AD-1" \
             --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
             --shape "VM.Standard.A1.Flex" \
             --shape-config file://shape_config.json \
             --image-id "ocid1.image.oc1.eu-zurich-1.aaaaaaaaekg26xbyq2unwclv466g76p5eul2u233t63ofbeon5yq6j6v6fqa" \
             --subnet-id "ocid1.subnet.oc1.eu-zurich-1.aaaaaaaamnhdcfeo4qlf5kzsy5tjkeze77etmbr6lcyky3v5rfuapdjxb5qa" \
-            --assign-public-ip true 2>&1) || true
+            --assign-public-ip true > "$OUTPUT_FILE" 2>&1 --raw-output --query "status" || echo "FEHLER")
           
-          echo "$OUTPUT"
+          # Inhalt der Antwort im Log ausgeben
+          cat "$OUTPUT_FILE"
           
-          # Wenn in der Antwort das Wort 'instance' oder 'lifecycle-state' vorkommt, war es erfolgreich!
-          if [[ "$OUTPUT" == *"instance"* || "$OUTPUT" == *"lifecycle-state"* ]]; then
+          # Wir prüfen nun, ob KEIN Fehler im Text ist und der Server wirklich erstellt wurde
+          if [ -s "$OUTPUT_FILE" ] && ! grep -q -E "ServiceError|code|message" "$OUTPUT_FILE"; then
             echo "========================================="
             echo "[BOT] !!! ERFOLG !!! Die Ampere-Instanz wurde erfolgreich erstellt!"
             echo "========================================="
             exit 0
           fi
           
-          # Nachricht für den Fehlschlag nach diesem Versuch
-          echo "[BOT] Versuch $i fehlgeschlagen (keine Kapazität)."
+          # Nachricht für den echten Fehlschlag nach diesem Versuch
+          echo "[BOT] Versuch $i fehlgeschlagen (keine Kapazität oder API-Limit)."
           
           # Warte exakt 240 Sekunden (4 Minuten) bis zum nächsten Versuch
           if [ $i -lt 3 ]; then
