@@ -38,7 +38,7 @@ jobs:
           --availability-domain "UocM:EU-ZURICH-1-AD-1" \
           --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
           --shape "VM.Standard.A1.Flex" \
-          --shape-config '{"ocpus":2,"memoryInGBs":12}' \
+          --shape-config "{\"ocpus\":2,\"memoryInGBs\\":12}" \
           --image-id "ocid1.image.oc1.eu-zurich-1.aaaaaaaaekg26xbyq2unwclv466g76p5eul2u233t63ofbeon5yq6j6v6fqa" \
           --subnet-id "ocid1.subnet.oc1.eu-zurich-1.aaaaaaaamnhdcfeo4qlf5kzsy5tjkeze77etmbr6lcyky3v5rfuapdjxb5qa" \
           --assign-public-ip true
