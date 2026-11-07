@@ -36,19 +36,19 @@ jobs:
     - name: Find Valid Image & Run 5.5h Loop
       run: |
         echo "[BOT] Suche aktuellste Ubuntu 22.04 ARM Image-ID für Zürich..."
+        
+        # Holt die Image-Liste als JSON und filtert mit Python absolut fehlerfrei nur die 1. ID heraus
         IMAGE_ID=$(oci compute image list \
           --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
           --operating-system "Canonical Ubuntu" \
           --operating-system-version "22.04" \
           --shape "VM.Standard.A1.Flex" \
           --sort-by TIMECREATED \
-          --sort-order DESC \
-          --query "data[0].id" \
-          --raw-output)
+          --sort-order DESC | python3 -c "import sys, json; print(json.load(sys.stdin)['data'][0]['id'])")
         
-        echo "[BOT] Gefundene Image-ID: $IMAGE_ID"
+        echo "[BOT] Sauber extrahierte Image-ID: $IMAGE_ID"
 
-        # Schreibt die Shape-Konfiguration als absolut reines JSON ohne Bash-Fehler
+        # Schreibt die Shape-Konfiguration als reines JSON
         python3 -c 'import json; open("shape.json", "w").write(json.dumps({"ocpus": 2, "memoryInGBs": 12}))'
 
         for i in {1..82}
