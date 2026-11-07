@@ -36,7 +36,6 @@ jobs:
     - name: Find Valid Image & Run 5.5h Loop
       run: |
         echo "[BOT] Suche aktuellste Ubuntu 22.04 ARM Image-ID für Zürich..."
-        # Wichtig: data[0].id holt garantiert nur einen einzigen, sauberen Wert!
         IMAGE_ID=$(oci compute image list \
           --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
           --operating-system "Canonical Ubuntu" \
@@ -48,6 +47,9 @@ jobs:
           --raw-output)
         
         echo "[BOT] Gefundene Image-ID: $IMAGE_ID"
+
+        # Schreibt die Shape-Konfiguration als absolut reines JSON ohne Bash-Fehler
+        python3 -c 'import json; open("shape.json", "w").write(json.dumps({"ocpus": 2, "memoryInGBs": 12}))'
 
         for i in {1..82}
         do
@@ -61,7 +63,7 @@ jobs:
             --availability-domain "UocM:EU-ZURICH-1-AD-1" \
             --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
             --shape "VM.Standard.A1.Flex" \
-            --shape-config '{"ocpus":2,"memoryInGBs":12}' \
+            --shape-config file://shape.json \
             --image-id "$IMAGE_ID" \
             --subnet-id "ocid1.subnet.oc1.eu-zurich-1.aaaaaaaamnhdcfeo4qlf5kzsy5tjkeze77etmbr6lcyky3v5rfuapdjxb5qa" \
             --assign-public-ip true > "$OUTPUT_FILE" 2>&1 || true
