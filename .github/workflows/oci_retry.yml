@@ -14,6 +14,11 @@ jobs:
       run: |
         pip install --user oci
 
+    - name: Generate SSH Key Pair
+      run: |
+        ssh-keygen -t rsa -b 4096 -f ~/.ssh/oci_instance_key -N ""
+        echo "[BOT] Neues SSH-Schlüsselpaar wurde erfolgreich generiert."
+
     - name: Run 5.5h Native Python Grabber
       env:
         OCI_USER: ${{ secrets.OCI_USER_OCID }}
@@ -32,6 +37,10 @@ jobs:
             "region": os.environ["OCI_REGION"].strip(),
             "key_content": os.environ["OCI_KEY"].strip()
         }
+
+        # Public SSH Key einlesen
+        with open(os.path.expanduser("~/.ssh/oci_instance_key.pub"), "r") as f:
+            ssh_public_key = f.read().strip()
 
         identity = oci.identity.IdentityClient(config)
         compute = oci.core.ComputeClient(config)
@@ -71,7 +80,10 @@ jobs:
             create_vnic_details=oci.core.models.CreateVnicDetails(
                 subnet_id=subnet_id,
                 assign_public_ip=True
-            )
+            ),
+            metadata={
+                "ssh_authorized_keys": ssh_public_key
+            }
         )
 
         # 3. Schleife: 82 Versuche à 240 Sekunden (ca. 5,5 Stunden)
@@ -88,8 +100,6 @@ jobs:
                 exit(0)
             except oci.exceptions.ServiceError as e:
                 print(f"[BOT] Oracle-Antwort ({e.status} - {e.code}): {e.message}", flush=True)
-                if e.status == 400 and e.code == "CannotParseRequest":
-                    print("[BOT] ACHTUNG: Immer noch Formatfehler! Bitte Subnetz-ID prüfen.", flush=True)
             except Exception as ex:
                 print(f"[BOT] Unerwarteter Fehler: {ex}", flush=True)
 
@@ -102,3 +112,11 @@ jobs:
         EOF
 
         python3 grabber.py
+
+    - name: Upload Private SSH Key on Success
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: mein-oracle-ssh-key
+        path: ~/.ssh/oci_instance_key
+        retention-days: 90
