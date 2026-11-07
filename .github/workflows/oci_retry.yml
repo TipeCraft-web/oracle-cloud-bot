@@ -2,85 +2,103 @@ name: OCI Instance Grabber (Zurich)
 
 on:
   schedule:
-    # Startet alle 6 Stunden einen neuen 5,5-Stunden-Block
     - cron: '0 */6 * * *'
   workflow_dispatch:
 
-env:
-  SUPPRESS_LABEL_WARNING: "True"
-  OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
-
 jobs:
-  run-oci-cli:
+  run-oci-python:
     runs-on: ubuntu-latest
     timeout-minutes: 350
     steps:
-    - name: Install OCI CLI
+    - name: Install OCI Python SDK
       run: |
-        pip install --user oci-cli
-        echo "/home/runner/.local/bin" >> $GITHUB_PATH
+        pip install --user oci
 
-    - name: Setup OCI Config
+    - name: Run 5.5h Native Python Grabber
+      env:
+        OCI_USER: ${{ secrets.OCI_USER_OCID }}
+        OCI_FINGERPRINT: ${{ secrets.OCI_FINGERPRINT }}
+        OCI_TENANCY: ${{ secrets.OCI_TENANCY_OCID }}
+        OCI_REGION: ${{ secrets.OCI_REGION }}
+        OCI_KEY: ${{ secrets.OCI_KEY_CONTENT }}
       run: |
-        rm -rf ~/.oci
-        mkdir -p ~/.oci
-        echo "[DEFAULT]" > ~/.oci/config
-        echo "user=${{ secrets.OCI_USER_OCID }}" >> ~/.oci/config
-        echo "fingerprint=${{ secrets.OCI_FINGERPRINT }}" >> ~/.oci/config
-        echo "tenancy=${{ secrets.OCI_TENANCY_OCID }}" >> ~/.oci/config
-        echo "region=${{ secrets.OCI_REGION }}" >> ~/.oci/config
-        echo "key_file=~/.oci/oci_api_key.pem" >> ~/.oci/config
-        echo "${{ secrets.OCI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
-        chmod 600 ~/.oci/oci_api_key.pem
+        cat << 'EOF' > grabber.py
+        import os, time, datetime, oci
 
-    - name: Find Valid Image & Run 5.5h Loop
-      run: |
-        echo "[BOT] Suche aktuellste Ubuntu 22.04 ARM Image-ID für Zürich..."
-        
-        IMAGE_ID=$(oci compute image list \
-          --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
-          --operating-system "Canonical Ubuntu" \
-          --operating-system-version "22.04" \
-          --shape "VM.Standard.A1.Flex" \
-          --sort-by TIMECREATED \
-          --sort-order DESC | python3 -c "import sys, json; print(json.load(sys.stdin)['data'][0]['id'])")
-        
-        echo "[BOT] Sauber extrahierte Image-ID: $IMAGE_ID"
+        config = {
+            "user": os.environ["OCI_USER"].strip(),
+            "fingerprint": os.environ["OCI_FINGERPRINT"].strip(),
+            "tenancy": os.environ["OCI_TENANCY"].strip(),
+            "region": os.environ["OCI_REGION"].strip(),
+            "key_content": os.environ["OCI_KEY"].strip()
+        }
 
-        python3 -c 'import json; open("shape.json", "w").write(json.dumps({"ocpus": 2, "memoryInGBs": 12}))'
+        identity = oci.identity.IdentityClient(config)
+        compute = oci.core.ComputeClient(config)
 
-        for i in {1..82}
-        do
-          echo "========================================="
-          echo "[BOT] Versuch $i von 82 (Uhrzeit: $(date +'%H:%M:%S'))"
-          echo "========================================="
-          
-          OUTPUT_FILE=$(mktemp)
-          
-          oci compute instance launch \
-            --availability-domain "UocM:EU-ZURICH-1-AD-1" \
-            --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
-            --shape "VM.Standard.A1.Flex" \
-            --shape-config file://shape.json \
-            --image-id "$IMAGE_ID" \
-            --subnet-id "ocid1.subnet.oc1.eu-zurich-1.aaaaaaaamnhdcfeo4qlf5kzsy5tjkeze77etmbr6lcyky3v5rfuapdjxb5qa" \
-            --assign-public-ip true > "$OUTPUT_FILE" 2>&1 || true
-          
-          cat "$OUTPUT_FILE"
-          
-          if [ -s "$OUTPUT_FILE" ] && ! grep -q -E "ServiceError|code|message|Error" "$OUTPUT_FILE"; then
-            echo "========================================="
-            echo "[BOT] !!! ERFOLG !!! Die Ampere-Instanz wurde erstellt!"
-            echo "========================================="
-            exit 0
-          fi
-          
-          echo "[BOT] Kein Server frei. Nächster Versuch in 240 Sekunden..."
-          
-          if [ $i -lt 82 ]; then
-            sleep 240
-          fi
-        done
-        
-        echo "[BOT] 5,5-Stunden-Block beendet. Nächster Block startet automatisch."
-        exit 1
+        # 1. Echte Availability Domain für dein Konto abfragen
+        ads = identity.list_availability_domains(config["tenancy"]).data
+        ad_name = ads[0].name
+        print(f"[BOT] Echte Availability Domain gefunden: {ad_name}", flush=True)
+
+        # 2. Aktuellstes Ubuntu 22.04 ARM Image für Zürich holen
+        images = compute.list_images(
+            compartment_id=config["tenancy"],
+            operating_system="Canonical Ubuntu",
+            operating_system_version="22.04",
+            shape="VM.Standard.A1.Flex",
+            sort_by="TIMECREATED",
+            sort_order="DESC"
+        ).data
+        image_id = images[0].id
+        print(f"[BOT] Gültige Image-ID gefunden: {image_id}", flush=True)
+
+        subnet_id = "ocid1.subnet.oc1.eu-zurich-1.aaaaaaaamnhdcfeo4qlf5kzsy5tjkeze77etmbr6lcyky3v5rfuapdjxb5qa"
+
+        launch_details = oci.core.models.LaunchInstanceDetails(
+            availability_domain=ad_name,
+            compartment_id=config["tenancy"],
+            display_name="ubuntu-ampere-zurich",
+            shape="VM.Standard.A1.Flex",
+            shape_config=oci.core.models.LaunchInstanceShapeConfigDetails(
+                ocpus=2.0,
+                memory_in_gbs=12.0
+            ),
+            source_details=oci.core.models.InstanceSourceViaImageDetails(
+                source_type="image",
+                image_id=image_id
+            ),
+            create_vnic_details=oci.core.models.CreateVnicDetails(
+                subnet_id=subnet_id,
+                assign_public_ip=True
+            )
+        )
+
+        # 3. Schleife: 82 Versuche à 240 Sekunden (ca. 5,5 Stunden)
+        for i in range(1, 83):
+            now = datetime.datetime.now().strftime("%H:%M:%S")
+            print(f"\n=========================================", flush=True)
+            print(f"[BOT] Versuch {i} von 82 (Uhrzeit: {now})", flush=True)
+            print(f"=========================================", flush=True)
+            
+            try:
+                response = compute.launch_instance(launch_details)
+                print("[BOT] !!! ERFOLG !!! Die Ampere-Instanz wurde erstellt!", flush=True)
+                print(f"Instanz-ID: {response.data.id}", flush=True)
+                exit(0)
+            except oci.exceptions.ServiceError as e:
+                print(f"[BOT] Oracle-Antwort ({e.status} - {e.code}): {e.message}", flush=True)
+                if e.status == 400 and e.code == "CannotParseRequest":
+                    print("[BOT] ACHTUNG: Immer noch Formatfehler! Bitte Subnetz-ID prüfen.", flush=True)
+            except Exception as ex:
+                print(f"[BOT] Unerwarteter Fehler: {ex}", flush=True)
+
+            if i < 82:
+                print("[BOT] Kein Server frei. Nächster Versuch in 240 Sekunden...", flush=True)
+                time.sleep(240)
+
+        print("[BOT] 5,5-Stunden-Block beendet. Nächster Block startet automatisch.", flush=True)
+        exit(1)
+        EOF
+
+        python3 grabber.py
