@@ -16,7 +16,7 @@ jobs:
 
     - name: Generate SSH Key Pair
       run: |
-        ssh-keygen -t rsa -b 4096 -f ~/.ssh/oci_instance_key -N ""
+        ssh-keygen -t rsa -b 4096 -f ./oci_instance_key -N ""
         echo "[BOT] Neues SSH-Schlüsselpaar wurde erfolgreich generiert."
 
     - name: Run 5.5h Native Python Grabber
@@ -38,8 +38,8 @@ jobs:
             "key_content": os.environ["OCI_KEY"].strip()
         }
 
-        # Public SSH Key einlesen
-        with open(os.path.expanduser("~/.ssh/oci_instance_key.pub"), "r") as f:
+        # Public SSH Key direkt aus dem Arbeitsverzeichnis einlesen
+        with open("./oci_instance_key.pub", "r") as f:
             ssh_public_key = f.read().strip()
 
         identity = oci.identity.IdentityClient(config)
@@ -118,5 +118,5 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: mein-oracle-ssh-key
-        path: ~/.ssh/oci_instance_key
+        path: ./oci_instance_key
         retention-days: 90
