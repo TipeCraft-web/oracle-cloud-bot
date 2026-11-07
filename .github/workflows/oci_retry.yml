@@ -2,8 +2,8 @@ name: OCI Instance Grabber (Zurich)
 
 on:
   schedule:
-    # Startet den Haupt-Wecker alle 15 Minuten
-    - cron: '*/15 * * * *'
+    # Startet alle 6 Stunden einen neuen 5,5-Stunden-Block (nahtloser Dauerbetrieb)
+    - cron: '0 */6 * * *'
   workflow_dispatch: # Erlaubt den manuellen Start am iPad
 
 env:
@@ -13,6 +13,8 @@ env:
 jobs:
   run-oci-cli:
     runs-on: ubuntu-latest
+    # Erlaubt dem Job, fast die maximalen 6 Stunden von GitHub zu nutzen (350 Min)
+    timeout-minutes: 350
     steps:
     - name: Install OCI CLI in User Space
       run: |
@@ -32,51 +34,43 @@ jobs:
         echo "${{ secrets.OCI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
         chmod 600 ~/.oci/oci_api_key.pem
 
-    - name: Safe 240s Spammer Loop
+    - name: 5.5h Continuous 240s Loop
       run: |
-        echo '{"ocpus": 2, "memoryInGBs": 12}' > shape_config.json
-        
-        # Schleife läuft 3-mal (3 Versuche * 240 Sekunden = 12 Minuten Laufzeit)
-        for i in {1..3}
+        # Schleife läuft 82-mal (82 * 240s = ca. 5,5 Stunden Dauerbetrieb)
+        for i in {1..82}
         do
           echo "========================================="
-          echo "Distanzierter Versuch Nummer $i von 3..."
+          echo "[BOT] Versuch $i von 82 (Uhrzeit: $(date +'%H:%M:%S'))"
           echo "========================================="
           
-          # Wir speichern die Antwort UND den echten HTTP-Statuscode ab
           OUTPUT_FILE=$(mktemp)
-          HTTP_STATUS=$(oci compute instance launch \
+          
+          # Korrigierte Syntax ohne externe Datei für --shape-config
+          oci compute instance launch \
             --availability-domain "UocM:EU-ZURICH-1-AD-1" \
             --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
             --shape "VM.Standard.A1.Flex" \
-            --shape-config file://shape_config.json \
+            --shape-config '{"ocpus":2,"memoryInGBs":12}' \
             --image-id "ocid1.image.oc1.eu-zurich-1.aaaaaaaaekg26xbyq2unwclv466g76p5eul2u233t63ofbeon5yq6j6v6fqa" \
             --subnet-id "ocid1.subnet.oc1.eu-zurich-1.aaaaaaaamnhdcfeo4qlf5kzsy5tjkeze77etmbr6lcyky3v5rfuapdjxb5qa" \
-            --assign-public-ip true > "$OUTPUT_FILE" 2>&1 --raw-output --query "status" || echo "FEHLER")
+            --assign-public-ip true > "$OUTPUT_FILE" 2>&1 || true
           
-          # Inhalt der Antwort im Log ausgeben
           cat "$OUTPUT_FILE"
           
-          # Wir prüfen nun, ob KEIN Fehler im Text ist und der Server wirklich erstellt wurde
-          if [ -s "$OUTPUT_FILE" ] && ! grep -q -E "ServiceError|code|message" "$OUTPUT_FILE"; then
+          # Prüfung auf echten Erfolg (kein ServiceError im Output)
+          if [ -s "$OUTPUT_FILE" ] && ! grep -q -E "ServiceError|code|message|Error" "$OUTPUT_FILE"; then
             echo "========================================="
-            echo "[BOT] !!! ERFOLG !!! Die Ampere-Instanz wurde erfolgreich erstellt!"
+            echo "[BOT] !!! ERFOLG !!! Die Ampere-Instanz wurde erstellt!"
             echo "========================================="
             exit 0
           fi
           
-          # Nachricht für den echten Fehlschlag nach diesem Versuch
-          echo "[BOT] Versuch $i fehlgeschlagen (keine Kapazität oder API-Limit)."
+          echo "[BOT] Kein Server frei. Nächster Versuch in 240 Sekunden..."
           
-          # Warte exakt 240 Sekunden (4 Minuten) bis zum nächsten Versuch
-          if [ $i -lt 3 ]; then
-            echo "[BOT] Ich schlafe jetzt für 240 Sekunden (4 Minuten)..."
+          if [ $i -lt 82 ]; then
             sleep 240
           fi
         done
         
-        # Nachricht für den Fehlschlag am Ende des gesamten 15-Minuten-Durchlaufs
-        echo "========================================="
-        echo "[BOT] Dieser Durchlauf war erfolglos. Ich warte auf den nächsten Wecker in 15 Minuten..."
-        echo "========================================="
+        echo "[BOT] 5,5-Stunden-Block beendet. Nächster Block startet automatisch."
         exit 1
