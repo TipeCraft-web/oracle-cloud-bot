@@ -48,6 +48,28 @@ jobs:
         
         echo "[BOT] Gefundene Image-ID: $IMAGE_ID"
 
+        # Wir erstellen das exakte JSON-Payload für die Oracle REST API
+        cat << EOF > launch_payload.json
+        {
+          "availabilityDomain": "UocM:EU-ZURICH-1-AD-1",
+          "compartmentId": "${{ secrets.OCI_TENANCY_OCID }}",
+          "displayName": "ubuntu-ampere-zurich",
+          "shape": "VM.Standard.A1.Flex",
+          "shapeConfig": {
+            "ocpus": 2,
+            "memoryInGBs": 12
+          },
+          "sourceDetails": {
+            "sourceType": "image",
+            "imageId": "$IMAGE_ID"
+          },
+          "createVnicDetails": {
+            "subnetId": "ocid1.subnet.oc1.eu-zurich-1.aaaaaaaamnhdcfeo4qlf5kzsy5tjkeze77etmbr6lcyky3v5rfuapdjxb5qa",
+            "assignPublicIp": true
+          }
+        }
+        EOF
+
         for i in {1..82}
         do
           echo "========================================="
@@ -56,14 +78,8 @@ jobs:
           
           OUTPUT_FILE=$(mktemp)
           
-          oci compute instance launch \
-            --availability-domain "UocM:EU-ZURICH-1-AD-1" \
-            --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
-            --shape "VM.Standard.A1.Flex" \
-            --shape-config '{"ocpus":2,"memoryInGBs":12}' \
-            --image-id "$IMAGE_ID" \
-            --subnet-id "ocid1.subnet.oc1.eu-zurich-1.aaaaaaaamnhdcfeo4qlf5kzsy5tjkeze77etmbr6lcyky3v5rfuapdjxb5qa" \
-            --assign-public-ip true > "$OUTPUT_FILE" 2>&1 || true
+          # Aufruf über das saubere JSON-Payload
+          oci compute instance launch --from-json file://launch_payload.json > "$OUTPUT_FILE" 2>&1 || true
           
           cat "$OUTPUT_FILE"
           
