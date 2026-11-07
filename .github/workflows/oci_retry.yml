@@ -2,8 +2,14 @@ name: OCI Instance Grabber (Zurich)
 
 on:
   schedule:
+    # Startet alle 6 Stunden einen neuen 5,5-Stunden-Block
     - cron: '0 */6 * * *'
   workflow_dispatch:
+
+env:
+  SUPPRESS_LABEL_WARNING: "True"
+  OCI_CLI_SUPPRESS_FILE_PERMISSIONS_WARNING: "True"
+  TZ: "Europe/Zurich" # Setzt die GitHub-Systemzeit auf Schweizer Zeit (inkl. Winterzeit)
 
 jobs:
   run-oci-python:
