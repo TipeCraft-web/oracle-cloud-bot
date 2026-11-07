@@ -37,7 +37,6 @@ jobs:
       run: |
         echo "[BOT] Suche aktuellste Ubuntu 22.04 ARM Image-ID für Zürich..."
         
-        # Holt die Image-Liste als JSON und filtert mit Python absolut fehlerfrei nur die 1. ID heraus
         IMAGE_ID=$(oci compute image list \
           --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
           --operating-system "Canonical Ubuntu" \
@@ -48,7 +47,6 @@ jobs:
         
         echo "[BOT] Sauber extrahierte Image-ID: $IMAGE_ID"
 
-        # Schreibt die Shape-Konfiguration als reines JSON
         python3 -c 'import json; open("shape.json", "w").write(json.dumps({"ocpus": 2, "memoryInGBs": 12}))'
 
         for i in {1..82}
