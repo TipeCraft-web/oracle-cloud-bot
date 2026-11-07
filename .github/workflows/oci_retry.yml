@@ -2,9 +2,9 @@ name: OCI Instance Grabber (Zurich)
 
 on:
   schedule:
-    # Startet alle 6 Stunden einen neuen 5,5-Stunden-Block (nahtloser Dauerbetrieb)
+    # Startet alle 6 Stunden einen neuen 5,5-Stunden-Block
     - cron: '0 */6 * * *'
-  workflow_dispatch: # Erlaubt den manuellen Start am iPad
+  workflow_dispatch:
 
 env:
   SUPPRESS_LABEL_WARNING: "True"
@@ -13,10 +13,9 @@ env:
 jobs:
   run-oci-cli:
     runs-on: ubuntu-latest
-    # Erlaubt dem Job, fast die maximalen 6 Stunden von GitHub zu nutzen (350 Min)
     timeout-minutes: 350
     steps:
-    - name: Install OCI CLI in User Space
+    - name: Install OCI CLI
       run: |
         pip install --user oci-cli
         echo "/home/runner/.local/bin" >> $GITHUB_PATH
@@ -34,9 +33,21 @@ jobs:
         echo "${{ secrets.OCI_KEY_CONTENT }}" > ~/.oci/oci_api_key.pem
         chmod 600 ~/.oci/oci_api_key.pem
 
-    - name: 5.5h Continuous 240s Loop
+    - name: Find Valid Image & Run 5.5h Loop
       run: |
-        # Schleife läuft 82-mal (82 * 240s = ca. 5,5 Stunden Dauerbetrieb)
+        echo "[BOT] Suche aktuellste Ubuntu 22.04 ARM Image-ID für Zürich..."
+        IMAGE_ID=$(oci compute image list \
+          --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
+          --operating-system "Canonical Ubuntu" \
+          --operating-system-version "22.04" \
+          --shape "VM.Standard.A1.Flex" \
+          --sort-by TIMECREATED \
+          --sort-order DESC \
+          --query "data[0].id" \
+          --raw-output)
+        
+        echo "[BOT] Gefundene Image-ID: $IMAGE_ID"
+
         for i in {1..82}
         do
           echo "========================================="
@@ -45,19 +56,17 @@ jobs:
           
           OUTPUT_FILE=$(mktemp)
           
-          # Korrigierte Syntax ohne externe Datei für --shape-config
           oci compute instance launch \
             --availability-domain "UocM:EU-ZURICH-1-AD-1" \
             --compartment-id "${{ secrets.OCI_TENANCY_OCID }}" \
             --shape "VM.Standard.A1.Flex" \
             --shape-config '{"ocpus":2,"memoryInGBs":12}' \
-            --image-id "ocid1.image.oc1.eu-zurich-1.aaaaaaaaekg26xbyq2unwclv466g76p5eul2u233t63ofbeon5yq6j6v6fqa" \
+            --image-id "$IMAGE_ID" \
             --subnet-id "ocid1.subnet.oc1.eu-zurich-1.aaaaaaaamnhdcfeo4qlf5kzsy5tjkeze77etmbr6lcyky3v5rfuapdjxb5qa" \
             --assign-public-ip true > "$OUTPUT_FILE" 2>&1 || true
           
           cat "$OUTPUT_FILE"
           
-          # Prüfung auf echten Erfolg (kein ServiceError im Output)
           if [ -s "$OUTPUT_FILE" ] && ! grep -q -E "ServiceError|code|message|Error" "$OUTPUT_FILE"; then
             echo "========================================="
             echo "[BOT] !!! ERFOLG !!! Die Ampere-Instanz wurde erstellt!"
